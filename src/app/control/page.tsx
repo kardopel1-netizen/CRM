@@ -7,6 +7,8 @@ import { displayName } from "@/lib/phone";
 import { canSeeAllInquiries, getSessionUser } from "@/server/auth";
 import { listControlBoard } from "@/server/escalation";
 import { listReturnBoard } from "@/server/returns";
+import { processAppointmentReminders, reminderWindowHours } from "@/server/reminders";
+import { runRemindersAction } from "@/app/actions";
 
 export default async function ControlPage() {
   const user = await getSessionUser();
@@ -18,18 +20,32 @@ export default async function ControlPage() {
     departmentId: user.departmentId,
   });
 
+  const reminders = await processAppointmentReminders({ actorId: user.id });
+
   const returns = await listReturnBoard({
     assigneeId: canSeeAllInquiries(user.role) ? undefined : user.id,
   });
 
   return (
     <AppShell user={user}>
-      <h1 className="font-[family-name:var(--font-display)] text-3xl">Контроль</h1>
-      <p className="mt-1 text-[var(--muted)]">
-        Просрочки, эскалации и плановые возвраты пациентов
-      </p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="font-[family-name:var(--font-display)] text-3xl">Контроль</h1>
+          <p className="mt-1 text-[var(--muted)]">
+            Просрочки, эскалации, плановые возвраты и напоминания о подтверждении записи
+          </p>
+        </div>
+        <form action={runRemindersAction}>
+          <button
+            type="submit"
+            className="rounded-lg border border-[var(--line)] px-4 py-2 text-sm hover:border-[var(--accent)]"
+          >
+            Напоминания записей
+          </button>
+        </form>
+      </div>
 
-      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Stat label="Просроченные задачи" value={board.overdueTasks.length} danger />
         <Stat label="Эскалировано" value={board.escalatedTasks} danger />
         <Stat label="Просрочен следующий шаг" value={board.overdueInquiries.length} danger />
@@ -37,6 +53,10 @@ export default async function ControlPage() {
           label="Возвраты просрочены"
           value={returns.overdue.length}
           danger={returns.overdue.length > 0}
+        />
+        <Stat
+          label={`Напоминания (≤${reminderWindowHours()}ч)`}
+          value={reminders.notified}
         />
       </div>
 

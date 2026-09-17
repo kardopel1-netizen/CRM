@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { DueBadge, formatWhen } from "@/components/Time";
 import {
@@ -85,6 +86,12 @@ export default async function PatientPage({
             {patient.email ? ` · ${patient.email}` : ""}
           </p>
         </div>
+        <Link
+          href={`/patients/merge?keep=${patient.id}`}
+          className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-sm hover:border-[var(--accent)]"
+        >
+          Слить с дублем
+        </Link>
       </div>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[1.4fr_1fr]">

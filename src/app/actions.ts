@@ -9,6 +9,7 @@ import { DomainError } from "@/server/errors";
 import { createAppointment, updateAppointmentStatus } from "@/server/appointments";
 import { logPatientInteraction } from "@/server/interactions";
 import { schedulePatientReturn, type ReturnReasonCode } from "@/server/returns";
+import { processAppointmentReminders } from "@/server/reminders";
 import { canSeeManagementDashboard } from "@/lib/roles";
 import { AppointmentStatus, InteractionType, TaskStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
@@ -228,4 +229,15 @@ export async function scheduleReturnAction(formData: FormData) {
     if (e instanceof DomainError) return { error: e.message };
     throw e;
   }
+}
+
+export async function runRemindersAction() {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+  await processAppointmentReminders({ actorId: user.id });
+  revalidatePath("/appointments");
+  revalidatePath("/notifications");
+  revalidatePath("/tasks");
+  revalidatePath("/control");
+  revalidatePath("/queue");
 }
