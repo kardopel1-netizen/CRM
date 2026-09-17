@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { logoutAction } from "@/app/actions";
-import { canAccessAdmin, roleLabel } from "@/lib/roles";
+import { canAccessAdmin, canSeeManagementDashboard, roleLabel } from "@/lib/roles";
 import type { SessionUser } from "@/server/auth";
 
 const baseNav = [
@@ -13,6 +13,7 @@ const baseNav = [
   { href: "/control", label: "Контроль" },
   { href: "/patients/new", label: "Новое обращение" },
   { href: "/reports", label: "Отчёты" },
+  { href: "/audit", label: "Аудит" },
 ];
 
 export function AppShell({
@@ -22,9 +23,13 @@ export function AppShell({
   user: SessionUser;
   children: React.ReactNode;
 }) {
-  const nav = canAccessAdmin(user.role)
-    ? [...baseNav, { href: "/admin", label: "Админ" }]
-    : baseNav;
+  const nav = [
+    ...baseNav.filter((item) => {
+      if (item.href === "/audit") return canSeeManagementDashboard(user.role);
+      return true;
+    }),
+    ...(canAccessAdmin(user.role) ? [{ href: "/admin", label: "Админ" }] : []),
+  ];
 
   return (
     <div className="min-h-full">

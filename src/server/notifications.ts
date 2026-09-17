@@ -301,3 +301,32 @@ export const notificationChannelLabel: Record<NotificationChannel, string> = {
   WHATSAPP: "WhatsApp",
   EMAIL: "Email",
 };
+
+/** Re-deliver a FAILED notification through the current provider. */
+export async function retryFailedNotification(notificationId: string) {
+  const n = await prisma.notification.findUniqueOrThrow({ where: { id: notificationId } });
+  if (n.status !== NotificationStatus.FAILED) {
+    return n;
+  }
+  if (!n.toAddress) {
+    await markFailed(notificationId, "phone_missing");
+    return prisma.notification.findUniqueOrThrow({ where: { id: notificationId } });
+  }
+
+  await prisma.notification.update({
+    where: { id: notificationId },
+    data: { status: NotificationStatus.PENDING, error: null },
+  });
+
+  await deliverNotification({
+    notificationId: n.id,
+    toAddress: n.toAddress,
+    body: n.body,
+    kind: n.kind,
+    patientId: n.patientId,
+    appointmentId: n.appointmentId,
+    inquiryId: n.inquiryId,
+  });
+
+  return prisma.notification.findUniqueOrThrow({ where: { id: notificationId } });
+}

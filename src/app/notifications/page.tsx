@@ -10,6 +10,7 @@ import {
   notificationKindLabel,
   notificationStatusLabel,
 } from "@/server/notifications";
+import { retryNotificationAction } from "@/app/actions";
 
 export default async function NotificationsPage() {
   const user = await getSessionUser();
@@ -40,7 +41,7 @@ export default async function NotificationsPage() {
         {" — "}
         {provider === "http" || provider === "webhook"
           ? "отправка на NOTIFY_WEBHOOK_URL."
-          : "локальная фиксация без SMS; для шлюза задайте NOTIFY_PROVIDER=http."}
+          : "локальная фиксация без SMS; для шлюза задайте NOTIFY_PROVIDER=http (см. docs/ops.md)."}
       </p>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-3">
@@ -88,6 +89,17 @@ export default async function NotificationsPage() {
               <p className="mt-3 text-sm leading-relaxed">{n.body}</p>
               {n.error ? (
                 <p className="mt-2 text-xs text-[var(--danger)]">{n.error}</p>
+              ) : null}
+              {n.status === "FAILED" ? (
+                <form action={retryNotificationAction} className="mt-3">
+                  <input type="hidden" name="notificationId" value={n.id} />
+                  <button
+                    type="submit"
+                    className="rounded-md border border-[var(--line)] px-3 py-1 text-xs text-[var(--muted)] transition hover:border-[var(--accent)] hover:text-[var(--ink)]"
+                  >
+                    Повторить отправку
+                  </button>
+                </form>
               ) : null}
             </li>
           ))

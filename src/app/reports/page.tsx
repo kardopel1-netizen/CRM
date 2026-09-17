@@ -1,19 +1,22 @@
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { getSessionUser } from "@/server/auth";
-import { getManagementAnalytics } from "@/server/analytics";
+import { getManagementAnalytics, getMarketingAnalytics } from "@/server/analytics";
 
 export default async function ReportsPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  const a = await getManagementAnalytics();
+  const [a, m] = await Promise.all([
+    getManagementAnalytics(),
+    getMarketingAnalytics({ days: 30 }),
+  ]);
 
   return (
     <AppShell user={user}>
       <h1 className="font-[family-name:var(--font-display)] text-3xl">Отчёты</h1>
       <p className="mt-1 text-[var(--muted)]">
-        Обращения, конверсии, SLA первого ответа, потери и нагрузка сотрудников
+        Обращения, конверсии, SLA, маркетинг (UTM) и нагрузка сотрудников
       </p>
 
       <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -42,6 +45,19 @@ export default async function ReportsPage() {
         <Card label="Неявки" value={a.totals.appointmentsNoShow} />
         <Card label="Отмены/переносы" value={a.totals.appointmentsCancelled} />
       </div>
+
+      <section className="mt-10">
+        <h2 className="font-[family-name:var(--font-display)] text-2xl">Маркетинг · {m.days} дн.</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          Разрез по UTM / кампаниям. С атрибуцией: {m.totals.withAttribution} из{" "}
+          {m.totals.inquiries}.
+        </p>
+        <div className="mt-4 grid gap-6 lg:grid-cols-3">
+          <MarketingTable title="По источнику" rows={m.bySource} />
+          <MarketingTable title="По кампании" rows={m.byCampaign} />
+          <MarketingTable title="По UTM medium" rows={m.byMedium} />
+        </div>
+      </section>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
         <section className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
@@ -103,6 +119,52 @@ export default async function ReportsPage() {
         </table>
       </section>
     </AppShell>
+  );
+}
+
+function MarketingTable({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: {
+    key: string;
+    label: string;
+    inquiries: number;
+    toAppointmentPct: number;
+    toVisitPct: number;
+    lostPct: number;
+  }[];
+}) {
+  const visible = rows.slice(0, 12);
+  return (
+    <section className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
+      <h3 className="font-[family-name:var(--font-display)] text-lg">{title}</h3>
+      {visible.length === 0 ? (
+        <p className="mt-4 text-sm text-[var(--muted)]">Нет данных за период</p>
+      ) : (
+        <table className="mt-4 w-full text-left text-sm">
+          <thead className="text-[var(--muted)]">
+            <tr>
+              <th className="pb-2 font-medium">Разрез</th>
+              <th className="pb-2 font-medium">N</th>
+              <th className="pb-2 font-medium">→зап%</th>
+              <th className="pb-2 font-medium">→виз%</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.map((row) => (
+              <tr key={row.key} className="border-t border-[var(--line)]/60">
+                <td className="py-2 pr-2">{row.label.replace(/^[^:]+:\s*/, "")}</td>
+                <td className="py-2">{row.inquiries}</td>
+                <td className="py-2">{row.toAppointmentPct}</td>
+                <td className="py-2">{row.toVisitPct}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
   );
 }
 

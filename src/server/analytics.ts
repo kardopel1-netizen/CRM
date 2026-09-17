@@ -228,4 +228,103 @@ export async function getManagementAnalytics(opts?: { assigneeId?: string }) {
   };
 }
 
+export async function getMarketingAnalytics(opts?: { days?: number }) {
+  const days = opts?.days ?? 30;
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+
+  const inquiries = await prisma.inquiry.findMany({
+    where: { createdAt: { gte: since } },
+    select: {
+      id: true,
+      status: true,
+      utmSource: true,
+      utmMedium: true,
+      utmCampaign: true,
+      sourceCampaign: true,
+      sourceSystem: true,
+      channelId: true,
+      appointments: {
+        select: { status: true },
+      },
+    },
+  });
+
+  type Agg = {
+    key: string;
+    label: string;
+    inquiries: number;
+    withAppointment: number;
+    arrived: number;
+    lost: number;
+  };
+
+  const buckets = new Map<string, Agg>();
+
+  function bump(key: string, label: string, row: (typeof inquiries)[number]) {
+    const cur = buckets.get(key) ?? {
+      key,
+      label,
+      inquiries: 0,
+      withAppointment: 0,
+      arrived: 0,
+      lost: 0,
+    };
+    cur.inquiries += 1;
+    if (row.appointments.length > 0) cur.withAppointment += 1;
+    if (row.appointments.some((a) => a.status === AppointmentStatus.ARRIVED)) cur.arrived += 1;
+    if (row.status === InquiryStatus.LOST) cur.lost += 1;
+    buckets.set(key, cur);
+  }
+
+  for (const row of inquiries) {
+    const source = row.utmSource || row.sourceSystem || "—";
+    const campaign = row.utmCampaign || row.sourceCampaign || "—";
+    const medium = row.utmMedium || "—";
+    bump(`src:${source}`, `Источник: ${source}`, row);
+    bump(`camp:${campaign}`, `Кампания: ${campaign}`, row);
+    bump(`med:${medium}`, `Канал UTM: ${medium}`, row);
+  }
+
+  const rows = [...buckets.values()]
+    .filter((r) => r.inquiries > 0)
+    .map((r) => ({
+      ...r,
+      toAppointmentPct: pct(r.withAppointment, r.inquiries),
+      toVisitPct: pct(r.arrived, r.inquiries),
+      lostPct: pct(r.lost, r.inquiries),
+    }))
+    .sort((a, b) => b.inquiries - a.inquiries);
+
+  const bySource = rows.filter((r) => r.key.startsWith("src:"));
+  const byCampaign = rows.filter((r) => r.key.startsWith("camp:"));
+  const byMedium = rows.filter((r) => r.key.startsWith("med:"));
+
+  const withUtm = inquiries.filter(
+    (i) => i.utmSource || i.utmCampaign || i.sourceCampaign || i.sourceSystem,
+  ).length;
+
+  return {
+    days,
+    totals: {
+      inquiries: inquiries.length,
+      withAttribution: withUtm,
+      withoutAttribution: inquiries.length - withUtm,
+    },
+    bySource,
+    byCampaign,
+    byMedium,
+  };
+}
+
+export async function listAuditLog(opts?: { take?: number; entityType?: string }) {
+  const take = opts?.take ?? 100;
+  return prisma.auditLog.findMany({
+    where: opts?.entityType ? { entityType: opts.entityType } : undefined,
+    include: { actor: { select: { id: true, name: true, email: true } } },
+    orderBy: { createdAt: "desc" },
+    take,
+  });
+}
+
 export { canSeeManagementDashboard } from "@/lib/roles";

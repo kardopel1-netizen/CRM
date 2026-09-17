@@ -10,7 +10,9 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "prisma migrate reset --force",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "sms:mock": "node scripts/sms-mock-server.mjs",
+    "jobs:tick": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/tick.ps1"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

@@ -241,3 +241,13 @@ export async function runRemindersAction() {
   revalidatePath("/control");
   revalidatePath("/queue");
 }
+
+export async function retryNotificationAction(formData: FormData) {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+  const id = String(formData.get("notificationId") || "");
+  if (!id) return;
+  const { retryFailedNotification } = await import("@/server/notifications");
+  await retryFailedNotification(id);
+  revalidatePath("/notifications");
+}
