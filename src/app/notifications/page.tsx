@@ -6,6 +6,7 @@ import { displayName } from "@/lib/phone";
 import { getSessionUser } from "@/server/auth";
 import { prisma } from "@/server/db";
 import {
+  notificationChannelLabel,
   notificationKindLabel,
   notificationStatusLabel,
 } from "@/server/notifications";
@@ -13,6 +14,12 @@ import {
 export default async function NotificationsPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
+
+  const provider = (process.env.NOTIFY_PROVIDER || "stub").toLowerCase();
+  const providerLabel =
+    provider === "http" || provider === "webhook"
+      ? `HTTP (${process.env.NOTIFY_CHANNEL || "SMS"})`
+      : "stub";
 
   const notifications = await prisma.notification.findMany({
     include: { patient: true, appointment: true },
@@ -28,8 +35,12 @@ export default async function NotificationsPage() {
     <AppShell user={user}>
       <h1 className="font-[family-name:var(--font-display)] text-3xl">Уведомления</h1>
       <p className="mt-1 text-[var(--muted)]">
-        Сообщения пациентам по событиям записи. Сейчас провайдер — stub (фиксация в CRM без
-        реальной SMS). Позже подключается SMS/WhatsApp.
+        Сообщения пациентам по событиям записи. Провайдер:{" "}
+        <span className="text-[var(--ink)]">{providerLabel}</span>
+        {" — "}
+        {provider === "http" || provider === "webhook"
+          ? "отправка на NOTIFY_WEBHOOK_URL."
+          : "локальная фиксация без SMS; для шлюза задайте NOTIFY_PROVIDER=http."}
       </p>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-3">
@@ -58,8 +69,8 @@ export default async function NotificationsPage() {
                     {displayName(n.patient)}
                   </Link>
                   <div className="mt-1 text-sm text-[var(--muted)]">
-                    {notificationKindLabel[n.kind]} · {n.toAddress || "без адреса"} ·{" "}
-                    {formatWhen(n.createdAt)}
+                    {notificationKindLabel[n.kind]} · {notificationChannelLabel[n.channel]} ·{" "}
+                    {n.toAddress || "без адреса"} · {formatWhen(n.createdAt)}
                   </div>
                 </div>
                 <span

@@ -104,6 +104,22 @@ export async function createAppointment(input: {
     });
   }
 
+  if (appointment.inquiryId) {
+    const { syncInquiryStageFromAppointment } = await import("@/server/inquiryStageSync");
+    await syncInquiryStageFromAppointment({
+      inquiryId: appointment.inquiryId,
+      appointmentStatus: status,
+      actorId: input.actorId,
+      appointmentId: appointment.id,
+    });
+  }
+
+  void import("@/server/mis")
+    .then(({ pushAppointmentToMis }) =>
+      pushAppointmentToMis(appointment.id, "appointment.created"),
+    )
+    .catch((e) => console.error("MIS outbound sync", e));
+
   return appointment;
 }
 
@@ -113,6 +129,8 @@ export async function updateAppointmentStatus(input: {
   cancelReasonId?: string;
   comment?: string;
   actorId: string;
+  /** Skip outbound MIS push (used when the change came from MIS). */
+  skipMisSync?: boolean;
 }) {
   const appointment = await prisma.appointment.findUniqueOrThrow({
     where: { id: input.appointmentId },
@@ -227,12 +245,33 @@ export async function updateAppointmentStatus(input: {
     });
   }
 
+  if (updated.inquiryId) {
+    const { syncInquiryStageFromAppointment } = await import("@/server/inquiryStageSync");
+    await syncInquiryStageFromAppointment({
+      inquiryId: updated.inquiryId,
+      appointmentStatus: input.status,
+      actorId: input.actorId,
+      appointmentId: updated.id,
+    });
+  }
+
   if (input.status === AppointmentStatus.ARRIVED) {
     await startAftercareAfterVisit({
       patientId: updated.patientId,
       fromInquiryId: updated.inquiryId,
       actorId: input.actorId,
     });
+  }
+
+  if (!input.skipMisSync) {
+    void import("@/server/mis")
+      .then(({ pushAppointmentToMis }) =>
+        pushAppointmentToMis(updated.id, "appointment.status_changed", {
+          fromStatus: appointment.status,
+          toStatus: input.status,
+        }),
+      )
+      .catch((e) => console.error("MIS outbound sync", e));
   }
 
   return updated;

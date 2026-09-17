@@ -205,7 +205,7 @@ async function main() {
     include: { stages: true },
   });
 
-  async function linkLinear(stages: { id: string; sortOrder: number }[]) {
+  async function linkLinear(stages: { id: string; sortOrder: number; code?: string }[]) {
     const ordered = [...stages].sort((a, b) => a.sortOrder - b.sortOrder);
     for (let i = 0; i < ordered.length - 1; i++) {
       await prisma.stageTransition.create({
@@ -227,9 +227,46 @@ async function main() {
     }
   }
 
+  async function linkByCode(
+    stages: { id: string; code: string }[],
+    pairs: [string, string][],
+  ) {
+    const byCode = Object.fromEntries(stages.map((s) => [s.code, s]));
+    for (const [fromCode, toCode] of pairs) {
+      const from = byCode[fromCode];
+      const to = byCode[toCode];
+      if (!from || !to) continue;
+      await prisma.stageTransition.upsert({
+        where: {
+          fromStageId_toStageId: { fromStageId: from.id, toStageId: to.id },
+        },
+        create: { fromStageId: from.id, toStageId: to.id },
+        update: {},
+      });
+    }
+  }
+
   await linkLinear(primary.stages);
   await linkLinear(aftercare.stages);
   await linkLinear(returnFunnel.stages);
+
+  await linkByCode(primary.stages, [
+    ["new", "booked"],
+    ["contacted", "booked"],
+    ["need_defined", "booked"],
+    ["offer_made", "booked"],
+    ["booked", "no_show"],
+    ["confirmed", "no_show"],
+  ]);
+  await linkByCode(aftercare.stages, [
+    ["first_visit_done", "booked_next"],
+    ["plan_ready", "booked_next"],
+    ["needs_continue", "booked_next"],
+  ]);
+  await linkByCode(returnFunnel.stages, [
+    ["due", "booked"],
+    ["contacted", "booked"],
+  ]);
 
   const phone = await prisma.channel.findUniqueOrThrow({ where: { code: "phone" } });
   const website = await prisma.channel.findUniqueOrThrow({ where: { code: "website" } });

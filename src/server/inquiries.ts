@@ -183,9 +183,21 @@ export async function moveInquiryStage(opts: {
   }
 
   const isLost = toStage.requiresReason || toStage.code === "lost" || toStage.code === "refused";
+
+  const slaBasedDue =
+    !opts.nextActionAt &&
+    !toStage.isTerminal &&
+    toStage.code !== "deferred" &&
+    toStage.slaMinutes
+      ? new Date(Date.now() + toStage.slaMinutes * 60 * 1000)
+      : undefined;
+
   const data: Prisma.InquiryUpdateInput = {
     stage: { connect: { id: toStage.id } },
-    nextActionAt: toStage.isTerminal && !isLost ? null : opts.nextActionAt ?? inquiry.nextActionAt,
+    nextActionAt:
+      toStage.isTerminal && !isLost
+        ? null
+        : opts.nextActionAt ?? slaBasedDue ?? inquiry.nextActionAt,
     nextActionText:
       toStage.isTerminal && !isLost ? null : opts.nextActionText ?? inquiry.nextActionText,
   };
@@ -219,7 +231,7 @@ export async function moveInquiryStage(opts: {
     data.firstContactAt = new Date();
   }
 
-  if (!toStage.isTerminal && !opts.nextActionAt && !inquiry.nextActionAt && toStage.code !== "deferred") {
+  if (!toStage.isTerminal && !opts.nextActionAt && !slaBasedDue && !inquiry.nextActionAt && toStage.code !== "deferred") {
     throw new DomainError("У открытого обращения должно быть следующее действие");
   }
 

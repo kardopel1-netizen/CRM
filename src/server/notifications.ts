@@ -46,32 +46,18 @@ export function buildNotificationBody(
   }
 }
 
-/** Stub provider: marks as SENT. Swap for SMS/WhatsApp gateway later. */
-async function deliverStub(notificationId: string, toAddress: string, body: string) {
-  const provider = (process.env.NOTIFY_PROVIDER || "stub").toLowerCase();
-  if (provider !== "stub") {
-    // Placeholder for real providers — fail soft into FAILED with message
-    await prisma.notification.update({
-      where: { id: notificationId },
-      data: {
-        status: NotificationStatus.FAILED,
-        error: `Провайдер ${provider} ещё не подключён. Используйте NOTIFY_PROVIDER=stub`,
-      },
-    });
-    return;
-  }
+function resolveNotifyChannel(): NotificationChannel {
+  const raw = (process.env.NOTIFY_CHANNEL || "SMS").toUpperCase();
+  if (raw === "WHATSAPP") return NotificationChannel.WHATSAPP;
+  if (raw === "EMAIL") return NotificationChannel.EMAIL;
+  return NotificationChannel.SMS;
+}
 
-  await prisma.notification.update({
-    where: { id: notificationId },
-    data: {
-      status: NotificationStatus.SENT,
-      sentAt: new Date(),
-      providerRef: `stub:${Date.now()}`,
-      channel: NotificationChannel.STUB,
-    },
-  });
-
-  // Mirror into patient timeline
+async function mirrorToTimeline(
+  notificationId: string,
+  toAddress: string,
+  body: string,
+) {
   const n = await prisma.notification.findUniqueOrThrow({ where: { id: notificationId } });
   await prisma.interaction.create({
     data: {
@@ -81,6 +67,156 @@ async function deliverStub(notificationId: string, toAddress: string, body: stri
       body: `[уведомление → ${toAddress}] ${body}`,
     },
   });
+}
+
+async function markSent(
+  notificationId: string,
+  channel: NotificationChannel,
+  providerRef: string,
+) {
+  await prisma.notification.update({
+    where: { id: notificationId },
+    data: {
+      status: NotificationStatus.SENT,
+      sentAt: new Date(),
+      providerRef,
+      channel,
+      error: null,
+    },
+  });
+}
+
+async function markFailed(notificationId: string, error: string, channel?: NotificationChannel) {
+  await prisma.notification.update({
+    where: { id: notificationId },
+    data: {
+      status: NotificationStatus.FAILED,
+      error: error.slice(0, 500),
+      ...(channel ? { channel } : {}),
+    },
+  });
+}
+
+/** Local stub: marks SENT without calling an external gateway. */
+async function deliverStub(notificationId: string, toAddress: string, body: string) {
+  await markSent(notificationId, NotificationChannel.STUB, `stub:${Date.now()}`);
+  await mirrorToTimeline(notificationId, toAddress, body);
+}
+
+/**
+ * Generic HTTP gateway (SMS/WhatsApp via n8n, Make, SMSC, Twilio bridge, etc.).
+ * POST NOTIFY_WEBHOOK_URL with JSON payload; 2xx = success.
+ */
+async function deliverHttp(
+  notificationId: string,
+  toAddress: string,
+  body: string,
+  kind: NotificationKind,
+  meta: { patientId: string; appointmentId?: string | null; inquiryId?: string | null },
+) {
+  const url = process.env.NOTIFY_WEBHOOK_URL?.trim();
+  const channel = resolveNotifyChannel();
+
+  if (!url) {
+    await markFailed(
+      notificationId,
+      "NOTIFY_WEBHOOK_URL не задан при NOTIFY_PROVIDER=http",
+      channel,
+    );
+    return;
+  }
+
+  const token =
+    process.env.NOTIFY_WEBHOOK_TOKEN?.trim() ||
+    process.env.NOTIFY_API_KEY?.trim() ||
+    "";
+
+  const payload = {
+    id: notificationId,
+    to: toAddress,
+    phone: toAddress,
+    body,
+    kind,
+    channel,
+    clinic: CLINIC(),
+    patientId: meta.patientId,
+    appointmentId: meta.appointmentId ?? null,
+    inquiryId: meta.inquiryId ?? null,
+  };
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...(token
+          ? {
+              Authorization: `Bearer ${token}`,
+              "x-api-key": token,
+            }
+          : {}),
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15_000),
+    });
+
+    const text = await res.text();
+    let providerRef = `http:${res.status}`;
+    try {
+      const json = JSON.parse(text) as { id?: string; providerRef?: string; messageId?: string };
+      providerRef =
+        json.providerRef || json.messageId || json.id || providerRef;
+    } catch {
+      /* non-JSON body is fine */
+    }
+
+    if (!res.ok) {
+      await markFailed(
+        notificationId,
+        `HTTP ${res.status}: ${text.slice(0, 300) || res.statusText}`,
+        channel,
+      );
+      return;
+    }
+
+    await markSent(notificationId, channel, String(providerRef).slice(0, 200));
+    await mirrorToTimeline(notificationId, toAddress, body);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "network_error";
+    await markFailed(notificationId, message, channel);
+  }
+}
+
+async function deliverNotification(input: {
+  notificationId: string;
+  toAddress: string;
+  body: string;
+  kind: NotificationKind;
+  patientId: string;
+  appointmentId?: string | null;
+  inquiryId?: string | null;
+}) {
+  const provider = (process.env.NOTIFY_PROVIDER || "stub").toLowerCase();
+
+  if (provider === "http" || provider === "webhook") {
+    await deliverHttp(input.notificationId, input.toAddress, input.body, input.kind, {
+      patientId: input.patientId,
+      appointmentId: input.appointmentId,
+      inquiryId: input.inquiryId,
+    });
+    return;
+  }
+
+  if (provider !== "stub") {
+    await markFailed(
+      input.notificationId,
+      `Провайдер ${provider} не поддерживается. Используйте stub или http.`,
+    );
+    return;
+  }
+
+  await deliverStub(input.notificationId, input.toAddress, input.body);
 }
 
 export async function enqueueAndSendPatientNotification(input: {
@@ -94,6 +230,12 @@ export async function enqueueAndSendPatientNotification(input: {
     ? await prisma.appointment.findUnique({ where: { id: input.appointmentId } })
     : null;
 
+  const provider = (process.env.NOTIFY_PROVIDER || "stub").toLowerCase();
+  const initialChannel =
+    provider === "http" || provider === "webhook"
+      ? resolveNotifyChannel()
+      : NotificationChannel.STUB;
+
   if (!patient.phoneNormalized) {
     return prisma.notification.create({
       data: {
@@ -101,7 +243,7 @@ export async function enqueueAndSendPatientNotification(input: {
         appointmentId: input.appointmentId,
         inquiryId: input.inquiryId ?? appointment?.inquiryId ?? null,
         kind: input.kind,
-        channel: NotificationChannel.STUB,
+        channel: initialChannel,
         status: NotificationStatus.SKIPPED,
         toAddress: "",
         body: "Нет телефона пациента",
@@ -117,14 +259,23 @@ export async function enqueueAndSendPatientNotification(input: {
       appointmentId: input.appointmentId,
       inquiryId: input.inquiryId ?? appointment?.inquiryId ?? null,
       kind: input.kind,
-      channel: NotificationChannel.STUB,
+      channel: initialChannel,
       status: NotificationStatus.PENDING,
       toAddress: patient.phone,
       body,
     },
   });
 
-  await deliverStub(notification.id, patient.phone, body);
+  await deliverNotification({
+    notificationId: notification.id,
+    toAddress: patient.phone,
+    body,
+    kind: input.kind,
+    patientId: patient.id,
+    appointmentId: input.appointmentId ?? appointment?.id,
+    inquiryId: input.inquiryId ?? appointment?.inquiryId,
+  });
+
   return prisma.notification.findUniqueOrThrow({ where: { id: notification.id } });
 }
 
@@ -142,4 +293,11 @@ export const notificationStatusLabel: Record<NotificationStatus, string> = {
   SENT: "Отправлено",
   FAILED: "Ошибка",
   SKIPPED: "Пропущено",
+};
+
+export const notificationChannelLabel: Record<NotificationChannel, string> = {
+  STUB: "Stub",
+  SMS: "SMS",
+  WHATSAPP: "WhatsApp",
+  EMAIL: "Email",
 };
