@@ -4,10 +4,12 @@ import bcrypt from "bcryptjs";
 import { redirect } from "next/navigation";
 import { prisma } from "@/server/db";
 import { clearSession, getSessionUser, setSession } from "@/server/auth";
-import { createInquiryWithTask, DomainError, moveInquiryStage } from "@/server/inquiries";
+import { createInquiryWithTask, moveInquiryStage } from "@/server/inquiries";
+import { DomainError } from "@/server/errors";
 import { createAppointment, updateAppointmentStatus } from "@/server/appointments";
 import { logPatientInteraction } from "@/server/interactions";
-import { canSeeManagementDashboard } from "@/server/analytics";
+import { schedulePatientReturn, type ReturnReasonCode } from "@/server/returns";
+import { canSeeManagementDashboard } from "@/lib/roles";
 import { AppointmentStatus, InteractionType, TaskStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 
@@ -192,6 +194,35 @@ export async function logInteractionAction(formData: FormData) {
     });
     revalidatePath(`/patients/${patientId}`);
     revalidatePath("/queue");
+    revalidatePath("/control");
+  } catch (e) {
+    if (e instanceof DomainError) return { error: e.message };
+    throw e;
+  }
+}
+
+export async function scheduleReturnAction(formData: FormData) {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+
+  const patientId = String(formData.get("patientId") || "");
+  const fromInquiryId = String(formData.get("fromInquiryId") || "") || undefined;
+  const reasonCode = String(formData.get("reasonCode") || "continue_treatment") as ReturnReasonCode;
+  const dueAtRaw = String(formData.get("dueAt") || "");
+  const comment = String(formData.get("comment") || "") || undefined;
+
+  try {
+    await schedulePatientReturn({
+      patientId,
+      actorId: user.id,
+      dueAt: new Date(dueAtRaw),
+      reasonCode,
+      comment,
+      fromInquiryId,
+    });
+    revalidatePath(`/patients/${patientId}`);
+    revalidatePath("/queue");
+    revalidatePath("/tasks");
     revalidatePath("/control");
   } catch (e) {
     if (e instanceof DomainError) return { error: e.message };

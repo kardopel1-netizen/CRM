@@ -1,5 +1,5 @@
 import { AppointmentStatus, Prisma, TaskStatus, NotificationKind } from "@prisma/client";
-import { DomainError } from "@/server/inquiries";
+import { DomainError } from "@/server/errors";
 import { prisma } from "@/server/db";
 import { enqueueAndSendPatientNotification } from "@/server/notifications";
 import { startAftercareAfterVisit } from "@/server/interactions";

@@ -5,16 +5,19 @@ import {
   changeStageAction,
   createAppointmentAction,
   logInteractionAction,
+  scheduleReturnAction,
   updateAppointmentStatusAction,
 } from "@/app/actions";
 import { displayName } from "@/lib/phone";
 import { getSessionUser } from "@/server/auth";
 import { appointmentStatusLabel } from "@/server/appointments";
+import { returnReasonOptions } from "@/server/returns";
 import { prisma } from "@/server/db";
 import { StageForm } from "./StageForm";
 import { CreateAppointmentForm } from "./CreateAppointmentForm";
 import { AppointmentStatusForm } from "./AppointmentStatusForm";
 import { InteractionForm } from "./InteractionForm";
+import { ScheduleReturnForm } from "./ScheduleReturnForm";
 
 export default async function PatientPage({
   params,
@@ -220,8 +223,32 @@ export default async function PatientPage({
                   action={changeStageAction}
                 />
               </div>
+              <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
+                <h2 className="font-[family-name:var(--font-display)] text-xl">Возврат пациента</h2>
+                <p className="mt-1 text-sm text-[var(--muted)]">
+                  Контроль, профилактика или продолжение лечения через срок
+                </p>
+                <ScheduleReturnForm
+                  patientId={patient.id}
+                  inquiryId={openInquiry.id}
+                  reasons={returnReasonOptions}
+                  action={scheduleReturnAction}
+                />
+              </div>
             </>
-          ) : null}
+          ) : (
+            <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
+              <h2 className="font-[family-name:var(--font-display)] text-xl">Возврат пациента</h2>
+              <p className="mt-1 text-sm text-[var(--muted)]">
+                Можно запланировать даже без открытого обращения
+              </p>
+              <ScheduleReturnForm
+                patientId={patient.id}
+                reasons={returnReasonOptions}
+                action={scheduleReturnAction}
+              />
+            </div>
+          )}
 
           <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
             <h2 className="font-[family-name:var(--font-display)] text-xl">История контактов</h2>

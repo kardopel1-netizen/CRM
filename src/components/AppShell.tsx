@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { logoutAction } from "@/app/actions";
-import { roleLabel, type SessionUser } from "@/server/auth";
+import { canAccessAdmin, roleLabel } from "@/lib/roles";
+import type { SessionUser } from "@/server/auth";
 
-const nav = [
+const baseNav = [
   { href: "/dashboard", label: "Дашборд" },
   { href: "/queue", label: "Очередь" },
   { href: "/patients", label: "Пациенты" },
@@ -21,12 +22,19 @@ export function AppShell({
   user: SessionUser;
   children: React.ReactNode;
 }) {
+  const nav = canAccessAdmin(user.role)
+    ? [...baseNav, { href: "/admin", label: "Админ" }]
+    : baseNav;
+
   return (
     <div className="min-h-full">
       <header className="border-b border-[var(--line)] bg-[var(--surface)]/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
           <div className="flex items-center gap-8">
-            <Link href="/queue" className="font-[family-name:var(--font-display)] text-xl tracking-tight text-[var(--ink)]">
+            <Link
+              href="/queue"
+              className="font-[family-name:var(--font-display)] text-xl tracking-tight text-[var(--ink)]"
+            >
               Aurelia<span className="text-[var(--accent)]">.</span>CRM
             </Link>
             <nav className="hidden items-center gap-1 md:flex">

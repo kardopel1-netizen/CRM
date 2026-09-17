@@ -3,9 +3,6 @@ import { cookies } from "next/headers";
 import { Role } from "@prisma/client";
 import { prisma } from "@/server/db";
 
-const COOKIE = "clinic_session";
-const MAX_AGE_SEC = 60 * 60 * 24 * 7;
-
 export type SessionUser = {
   id: string;
   email: string;
@@ -13,6 +10,17 @@ export type SessionUser = {
   role: Role;
   departmentId: string | null;
 };
+
+export {
+  ALL_ROLES,
+  canAccessAdmin,
+  canSeeAllInquiries,
+  canSeeManagementDashboard,
+  roleLabel,
+} from "@/lib/roles";
+
+const COOKIE = "clinic_session";
+const MAX_AGE_SEC = 60 * 60 * 24 * 7;
 
 function secret() {
   return process.env.SESSION_SECRET || "dev-change-me-to-a-long-random-string";
@@ -72,23 +80,4 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     select: { id: true, email: true, name: true, role: true, departmentId: true },
   });
   return user;
-}
-
-export function canSeeAllInquiries(role: Role): boolean {
-  return role === Role.MANAGER || role === Role.DIRECTOR || role === Role.OWNER || role === Role.ADMIN;
-}
-
-export function roleLabel(role: Role): string {
-  switch (role) {
-    case Role.OPERATOR:
-      return "Оператор";
-    case Role.MANAGER:
-      return "Руководитель";
-    case Role.DIRECTOR:
-      return "Управляющий";
-    case Role.OWNER:
-      return "Собственник";
-    case Role.ADMIN:
-      return "Админ";
-  }
 }

@@ -2,7 +2,8 @@ import { z } from "zod";
 import { InquiryStatus, InteractionType } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { normalizePhone } from "@/lib/phone";
-import { createInquiryWithTask, DomainError } from "@/server/inquiries";
+import { createInquiryWithTask } from "@/server/inquiries";
+import { DomainError } from "@/server/errors";
 import { logPatientInteraction } from "@/server/interactions";
 
 export const inboundCallSchema = z.object({

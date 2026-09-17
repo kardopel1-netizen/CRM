@@ -1,13 +1,10 @@
 import { InquiryStatus, Prisma, TaskStatus } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { normalizePhone } from "@/lib/phone";
+import { DomainError } from "@/server/errors";
+import { defaultReturnDelayDays, schedulePatientReturn } from "@/server/returns";
 
-export class DomainError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "DomainError";
-  }
-}
+export { DomainError } from "@/server/errors";
 
 type CreateInquiryInput = {
   firstName: string;
@@ -206,6 +203,12 @@ export async function moveInquiryStage(opts: {
     data.closedAt = new Date();
   } else if (toStage.code === "deferred") {
     data.status = InquiryStatus.DEFERRED;
+    if (!opts.nextActionAt) {
+      const days = defaultReturnDelayDays();
+      data.nextActionAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+      data.nextActionText =
+        opts.nextActionText || `Связаться через ${days} дн. (отложенное решение)`;
+    }
   }
 
   if (opts.comment) {
@@ -216,12 +219,12 @@ export async function moveInquiryStage(opts: {
     data.firstContactAt = new Date();
   }
 
-  if (!toStage.isTerminal && !opts.nextActionAt && !inquiry.nextActionAt) {
+  if (!toStage.isTerminal && !opts.nextActionAt && !inquiry.nextActionAt && toStage.code !== "deferred") {
     throw new DomainError("У открытого обращения должно быть следующее действие");
   }
 
-  return prisma.$transaction(async (tx) => {
-    const updated = await tx.inquiry.update({
+  const updated = await prisma.$transaction(async (tx) => {
+    const next = await tx.inquiry.update({
       where: { id: inquiry.id },
       data,
     });
@@ -238,6 +241,22 @@ export async function moveInquiryStage(opts: {
         }),
       },
     });
-    return updated;
+    return next;
   });
+
+  if (toStage.code === "deferred") {
+    const dueAt =
+      opts.nextActionAt ??
+      new Date(Date.now() + defaultReturnDelayDays() * 24 * 60 * 60 * 1000);
+    await schedulePatientReturn({
+      patientId: updated.patientId,
+      actorId: opts.actorId,
+      dueAt,
+      reasonCode: "deferred_decision",
+      comment: opts.comment,
+      fromInquiryId: updated.id,
+    });
+  }
+
+  return updated;
 }

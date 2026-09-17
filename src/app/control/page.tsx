@@ -4,8 +4,9 @@ import { AppShell } from "@/components/AppShell";
 import { DueBadge } from "@/components/Time";
 import { completeTaskAction } from "@/app/actions";
 import { displayName } from "@/lib/phone";
-import { getSessionUser } from "@/server/auth";
+import { canSeeAllInquiries, getSessionUser } from "@/server/auth";
 import { listControlBoard } from "@/server/escalation";
+import { listReturnBoard } from "@/server/returns";
 
 export default async function ControlPage() {
   const user = await getSessionUser();
@@ -17,18 +18,26 @@ export default async function ControlPage() {
     departmentId: user.departmentId,
   });
 
+  const returns = await listReturnBoard({
+    assigneeId: canSeeAllInquiries(user.role) ? undefined : user.id,
+  });
+
   return (
     <AppShell user={user}>
       <h1 className="font-[family-name:var(--font-display)] text-3xl">Контроль</h1>
       <p className="mt-1 text-[var(--muted)]">
-        Просроченные задачи и обращения без движения. Просроченные задачи помечаются как
-        эскалированные для руководителя.
+        Просрочки, эскалации и плановые возвраты пациентов
       </p>
 
-      <div className="mt-6 grid gap-3 sm:grid-cols-3">
+      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Просроченные задачи" value={board.overdueTasks.length} danger />
         <Stat label="Эскалировано" value={board.escalatedTasks} danger />
         <Stat label="Просрочен следующий шаг" value={board.overdueInquiries.length} danger />
+        <Stat
+          label="Возвраты просрочены"
+          value={returns.overdue.length}
+          danger={returns.overdue.length > 0}
+        />
       </div>
 
       <section className="mt-10">
@@ -113,7 +122,74 @@ export default async function ControlPage() {
           )}
         </ul>
       </section>
+
+      <section className="mt-10">
+        <h2 className="font-[family-name:var(--font-display)] text-xl">Возвраты пациентов</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          Просроченные и ближайшие 7 дней по воронке возврата
+        </p>
+
+        <h3 className="mt-6 text-sm font-medium uppercase tracking-wide text-[var(--muted)]">
+          Просрочено ({returns.overdue.length})
+        </h3>
+        <ul className="mt-2 space-y-3">
+          {returns.overdue.length === 0 ? (
+            <li className="text-sm text-[var(--muted)]">Нет просроченных возвратов</li>
+          ) : (
+            returns.overdue.map((inq) => (
+              <ReturnRow key={inq.id} inquiry={inq} />
+            ))
+          )}
+        </ul>
+
+        <h3 className="mt-6 text-sm font-medium uppercase tracking-wide text-[var(--muted)]">
+          Ближайшие 7 дней ({returns.upcoming.length})
+        </h3>
+        <ul className="mt-2 space-y-3">
+          {returns.upcoming.length === 0 ? (
+            <li className="text-sm text-[var(--muted)]">Нет запланированных на неделю</li>
+          ) : (
+            returns.upcoming.map((inq) => (
+              <ReturnRow key={inq.id} inquiry={inq} />
+            ))
+          )}
+        </ul>
+      </section>
     </AppShell>
+  );
+}
+
+function ReturnRow({
+  inquiry,
+}: {
+  inquiry: {
+    id: string;
+    patientId: string;
+    nextActionAt: Date | null;
+    nextActionText: string | null;
+    reasonText: string | null;
+    patient: { firstName: string; lastName: string; middleName: string | null };
+    stage: { name: string };
+    assignee: { name: string } | null;
+  };
+}) {
+  return (
+    <li className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-4">
+      <Link
+        href={`/patients/${inquiry.patientId}`}
+        className="font-medium hover:text-[var(--accent)]"
+      >
+        {displayName(inquiry.patient)}
+      </Link>
+      <div className="mt-1 text-sm text-[var(--muted)]">
+        {inquiry.stage.name} · {inquiry.assignee?.name ?? "без ответственного"}
+        {inquiry.reasonText ? ` · ${inquiry.reasonText}` : ""}
+        {inquiry.nextActionText ? ` · ${inquiry.nextActionText}` : ""}
+      </div>
+      <div className="mt-2">
+        <DueBadge date={inquiry.nextActionAt} />
+      </div>
+    </li>
   );
 }
 

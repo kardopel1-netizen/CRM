@@ -1,5 +1,5 @@
 import { InteractionType, InquiryStatus, TaskStatus } from "@prisma/client";
-import { DomainError } from "@/server/inquiries";
+import { DomainError } from "@/server/errors";
 import { prisma } from "@/server/db";
 
 export async function logPatientInteraction(input: {

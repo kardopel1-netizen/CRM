@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { prisma } from "@/server/db";
-import { createInquiryWithTask, DomainError } from "@/server/inquiries";
+import { createInquiryWithTask } from "@/server/inquiries";
+import { DomainError } from "@/server/errors";
 
 export const leadIngestSchema = z.object({
   firstName: z.string().min(1).max(100),

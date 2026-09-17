@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { DomainError } from "@/server/inquiries";
+import { DomainError } from "@/server/errors";
 import { assertLeadApiKey, ingestLead } from "@/server/leads";
 
 export const runtime = "nodejs";

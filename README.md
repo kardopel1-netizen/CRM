@@ -37,14 +37,17 @@ npm run dev
 - Уведомления пациентам по событиям записи (stub-провайдер)
 - Дашборд руководства и расширенные отчёты (конверсии, SLA, потери)
 - Вебхук телефонии `POST /api/calls` (входящий звонок → карточка)
+- Воронка возврата пациентов (план контакта + контроль)
+- Админка: пользователи и классификаторы
 - Классификатор причин потери
 - Очередь, карточка пациента, задачи, базовые отчёты
-- Документы: `docs/process.md`, `docs/classifiers.md`, `docs/webhook.md`, `docs/notifications.md`, `docs/interactions.md`, `docs/analytics.md`, `docs/telephony.md`
+- Документы: см. `docs/`
 
 ## Дальше
 
 Реальный SMS/WhatsApp-провайдер, интеграция с конкретной АТС/МИС.
 
-Журнал контактов и aftercare: [docs/interactions.md](docs/interactions.md).  
+Админка: [docs/admin.md](docs/admin.md) (`admin@clinic.local` / `demo1234`).  
+Возвраты: [docs/returns.md](docs/returns.md).  
 Телефония: [docs/telephony.md](docs/telephony.md).  
 Войти как `owner@clinic.local` / `demo1234` — откроется дашборд.

@@ -228,11 +228,4 @@ export async function getManagementAnalytics(opts?: { assigneeId?: string }) {
   };
 }
 
-export function canSeeManagementDashboard(role: Role) {
-  return (
-    role === Role.MANAGER ||
-    role === Role.DIRECTOR ||
-    role === Role.OWNER ||
-    role === Role.ADMIN
-  );
-}
+export { canSeeManagementDashboard } from "@/lib/roles";
