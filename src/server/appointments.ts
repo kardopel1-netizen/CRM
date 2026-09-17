@@ -1,6 +1,7 @@
-import { AppointmentStatus, Prisma, TaskStatus } from "@prisma/client";
+import { AppointmentStatus, Prisma, TaskStatus, NotificationKind } from "@prisma/client";
 import { DomainError } from "@/server/inquiries";
 import { prisma } from "@/server/db";
+import { enqueueAndSendPatientNotification } from "@/server/notifications";
 
 const STATUSES_NEEDING_REASON: AppointmentStatus[] = [
   AppointmentStatus.CANCELLED_BY_PATIENT,
@@ -40,8 +41,8 @@ export async function createAppointment(input: {
 
   const status = input.status ?? AppointmentStatus.BOOKED;
 
-  return prisma.$transaction(async (tx) => {
-    const appointment = await tx.appointment.create({
+  const appointment = await prisma.$transaction(async (tx) => {
+    const created = await tx.appointment.create({
       data: {
         patientId: input.patientId,
         inquiryId: input.inquiryId || null,
@@ -64,7 +65,7 @@ export async function createAppointment(input: {
             ? new Date(Math.min(input.startsAt.getTime() - 2 * 60 * 60 * 1000, confirmDue.getTime()))
             : confirmDue,
           inquiryId: input.inquiryId,
-          appointmentId: appointment.id,
+          appointmentId: created.id,
           assigneeId: input.actorId,
           createdById: input.actorId,
           status: TaskStatus.OPEN,
@@ -84,14 +85,25 @@ export async function createAppointment(input: {
       data: {
         actorId: input.actorId,
         entityType: "Appointment",
-        entityId: appointment.id,
+        entityId: created.id,
         action: "created",
         payload: JSON.stringify({ status, inquiryId: input.inquiryId }),
       },
     });
 
-    return appointment;
+    return created;
   });
+
+  if (status === AppointmentStatus.BOOKED || status === AppointmentStatus.OFFERED) {
+    await enqueueAndSendPatientNotification({
+      patientId: appointment.patientId,
+      appointmentId: appointment.id,
+      inquiryId: appointment.inquiryId,
+      kind: NotificationKind.APPOINTMENT_BOOKED,
+    });
+  }
+
+  return appointment;
 }
 
 export async function updateAppointmentStatus(input: {
@@ -120,8 +132,8 @@ export async function updateAppointmentStatus(input: {
     data.cancelReason = { disconnect: true };
   }
 
-  return prisma.$transaction(async (tx) => {
-    const updated = await tx.appointment.update({
+  const updated = await prisma.$transaction(async (tx) => {
+    const next = await tx.appointment.update({
       where: { id: appointment.id },
       data,
     });
@@ -193,6 +205,26 @@ export async function updateAppointmentStatus(input: {
       },
     });
 
-    return updated;
+    return next;
   });
+
+  const kindByStatus: Partial<Record<AppointmentStatus, NotificationKind>> = {
+    CONFIRMED: NotificationKind.APPOINTMENT_CONFIRMED,
+    CANCELLED_BY_PATIENT: NotificationKind.APPOINTMENT_CANCELLED,
+    RESCHEDULED_BY_CLINIC: NotificationKind.APPOINTMENT_RESCHEDULED,
+    NO_SHOW: NotificationKind.APPOINTMENT_NO_SHOW,
+    BOOKED: NotificationKind.APPOINTMENT_CONFIRM_REQUEST,
+  };
+
+  const kind = kindByStatus[input.status];
+  if (kind) {
+    await enqueueAndSendPatientNotification({
+      patientId: updated.patientId,
+      appointmentId: updated.id,
+      inquiryId: updated.inquiryId,
+      kind,
+    });
+  }
+
+  return updated;
 }

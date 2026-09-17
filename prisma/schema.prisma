@@ -47,6 +47,29 @@ enum InteractionType {
   OTHER
 }
 
+enum NotificationChannel {
+  SMS
+  WHATSAPP
+  EMAIL
+  STUB
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+enum NotificationKind {
+  APPOINTMENT_BOOKED
+  APPOINTMENT_CONFIRM_REQUEST
+  APPOINTMENT_CONFIRMED
+  APPOINTMENT_CANCELLED
+  APPOINTMENT_NO_SHOW
+  APPOINTMENT_RESCHEDULED
+}
+
 model Department {
   id        String   @id @default(cuid())
   name      String
@@ -165,6 +188,7 @@ model Patient {
   inquiries    Inquiry[]
   appointments Appointment[]
   interactions Interaction[]
+  notifications Notification[]
 
   @@index([phoneNormalized])
   @@index([lastName, firstName])
@@ -279,9 +303,32 @@ model Appointment {
   updatedAt      DateTime          @updatedAt
 
   tasks Task[]
+  notifications Notification[]
 
   @@index([startsAt])
   @@index([status])
+}
+
+model Notification {
+  id            String              @id @default(cuid())
+  patientId     String
+  patient       Patient             @relation(fields: [patientId], references: [id])
+  appointmentId String?
+  appointment   Appointment?        @relation(fields: [appointmentId], references: [id])
+  inquiryId     String?
+  kind          NotificationKind
+  channel       NotificationChannel @default(STUB)
+  status        NotificationStatus  @default(PENDING)
+  toAddress     String
+  body          String
+  error         String?
+  providerRef   String?
+  sentAt        DateTime?
+  createdAt     DateTime            @default(now())
+
+  @@index([status, createdAt])
+  @@index([patientId, createdAt])
+  @@index([appointmentId])
 }
 
 model AuditLog {

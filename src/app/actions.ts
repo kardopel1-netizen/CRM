@@ -131,6 +131,7 @@ export async function createAppointmentAction(formData: FormData) {
     revalidatePath("/appointments");
     revalidatePath("/tasks");
     revalidatePath("/queue");
+    revalidatePath("/notifications");
   } catch (e) {
     if (e instanceof DomainError) return { error: e.message };
     throw e;
@@ -160,6 +161,7 @@ export async function updateAppointmentStatusAction(formData: FormData) {
     revalidatePath("/tasks");
     revalidatePath("/queue");
     revalidatePath("/control");
+    revalidatePath("/notifications");
   } catch (e) {
     if (e instanceof DomainError) return { error: e.message };
     throw e;
