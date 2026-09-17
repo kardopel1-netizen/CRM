@@ -6,7 +6,8 @@ import { prisma } from "@/server/db";
 import { clearSession, getSessionUser, setSession } from "@/server/auth";
 import { createInquiryWithTask, DomainError, moveInquiryStage } from "@/server/inquiries";
 import { createAppointment, updateAppointmentStatus } from "@/server/appointments";
-import { AppointmentStatus, TaskStatus } from "@prisma/client";
+import { logPatientInteraction } from "@/server/interactions";
+import { AppointmentStatus, InteractionType, TaskStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 
 export async function loginAction(formData: FormData) {
@@ -162,6 +163,35 @@ export async function updateAppointmentStatusAction(formData: FormData) {
     revalidatePath("/queue");
     revalidatePath("/control");
     revalidatePath("/notifications");
+  } catch (e) {
+    if (e instanceof DomainError) return { error: e.message };
+    throw e;
+  }
+}
+
+export async function logInteractionAction(formData: FormData) {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+
+  const patientId = String(formData.get("patientId") || "");
+  const inquiryId = String(formData.get("inquiryId") || "") || undefined;
+  const type = String(formData.get("type") || "COMMENT") as InteractionType;
+  const body = String(formData.get("body") || "");
+  const countsRaw = formData.get("countsAsContactAttempt");
+  const countsAsContactAttempt = countsRaw === "1" || countsRaw === "on";
+
+  try {
+    await logPatientInteraction({
+      patientId,
+      inquiryId,
+      authorId: user.id,
+      type,
+      body,
+      countsAsContactAttempt,
+    });
+    revalidatePath(`/patients/${patientId}`);
+    revalidatePath("/queue");
+    revalidatePath("/control");
   } catch (e) {
     if (e instanceof DomainError) return { error: e.message };
     throw e;

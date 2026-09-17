@@ -2,6 +2,7 @@ import { AppointmentStatus, Prisma, TaskStatus, NotificationKind } from "@prisma
 import { DomainError } from "@/server/inquiries";
 import { prisma } from "@/server/db";
 import { enqueueAndSendPatientNotification } from "@/server/notifications";
+import { startAftercareAfterVisit } from "@/server/interactions";
 
 const STATUSES_NEEDING_REASON: AppointmentStatus[] = [
   AppointmentStatus.CANCELLED_BY_PATIENT,
@@ -223,6 +224,14 @@ export async function updateAppointmentStatus(input: {
       appointmentId: updated.id,
       inquiryId: updated.inquiryId,
       kind,
+    });
+  }
+
+  if (input.status === AppointmentStatus.ARRIVED) {
+    await startAftercareAfterVisit({
+      patientId: updated.patientId,
+      fromInquiryId: updated.inquiryId,
+      actorId: input.actorId,
     });
   }
 

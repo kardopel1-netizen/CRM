@@ -41,4 +41,6 @@ npm run dev
 
 ## Дальше
 
-Реальный SMS/WhatsApp-провайдер, интеграции телефонии/МИС.
+Реальный SMS/WhatsApp-провайдер, интеграции телефонии/МИС, поиск и журнал контактов уже в MVP.
+
+Журнал контактов и aftercare после визита: [docs/interactions.md](docs/interactions.md).

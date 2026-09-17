@@ -4,6 +4,7 @@ import { DueBadge, formatWhen } from "@/components/Time";
 import {
   changeStageAction,
   createAppointmentAction,
+  logInteractionAction,
   updateAppointmentStatusAction,
 } from "@/app/actions";
 import { displayName } from "@/lib/phone";
@@ -13,6 +14,7 @@ import { prisma } from "@/server/db";
 import { StageForm } from "./StageForm";
 import { CreateAppointmentForm } from "./CreateAppointmentForm";
 import { AppointmentStatusForm } from "./AppointmentStatusForm";
+import { InteractionForm } from "./InteractionForm";
 
 export default async function PatientPage({
   params,
@@ -115,6 +117,21 @@ export default async function PatientPage({
                   {inquiry.nextActionText ?? "нет следующего действия"}
                 </span>
               </div>
+              <div className="mt-2 flex flex-wrap gap-3 text-xs text-[var(--muted)]">
+                <span>
+                  Первый контакт:{" "}
+                  {inquiry.firstContactAt ? formatWhen(inquiry.firstContactAt) : "ещё нет"}
+                </span>
+                <span>Попыток связи: {inquiry.contactAttempts}</span>
+                {inquiry.firstContactDueAt ? (
+                  <span>
+                    SLA первого ответа до: {formatWhen(inquiry.firstContactDueAt)}
+                    {inquiry.firstContactDueAt.getTime() < Date.now() && !inquiry.firstContactAt
+                      ? " · просрочен"
+                      : ""}
+                  </span>
+                ) : null}
+              </div>
               {inquiry.utmSource || inquiry.sourceSystem ? (
                 <p className="mt-2 text-xs text-[var(--muted)]">
                   Источник: {[inquiry.sourceSystem, inquiry.utmSource, inquiry.utmCampaign]
@@ -208,6 +225,15 @@ export default async function PatientPage({
 
           <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
             <h2 className="font-[family-name:var(--font-display)] text-xl">История контактов</h2>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Звонок или сообщение фиксирует первый контакт и может перевести этап «Новое → Контакт
+              установлен»
+            </p>
+            <InteractionForm
+              patientId={patient.id}
+              inquiryId={openInquiry?.id}
+              action={logInteractionAction}
+            />
             <ul className="mt-4 space-y-3">
               {patient.interactions.length === 0 ? (
                 <li className="text-sm text-[var(--muted)]">Пока нет записей</li>
