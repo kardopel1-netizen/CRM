@@ -31,6 +31,11 @@ export default async function QueuePage() {
     (i) => i.nextActionAt && i.nextActionAt.getTime() < Date.now(),
   ).length;
 
+  const websiteChannel = await prisma.channel.findFirst({ where: { code: "website" } });
+  const fromSite = websiteChannel
+    ? inquiries.filter((i) => i.channelId === websiteChannel.id).length
+    : 0;
+
   return (
     <AppShell user={user}>
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -48,8 +53,9 @@ export default async function QueuePage() {
         </Link>
       </div>
 
-      <div className="mt-6 grid gap-3 sm:grid-cols-3">
+      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Открыто" value={String(inquiries.length)} />
+        <Stat label="С сайта / форм" value={String(fromSite)} />
         <Stat label="Просрочен следующий шаг" value={String(overdue)} danger={overdue > 0} />
         <Stat
           label="Без следующего действия"

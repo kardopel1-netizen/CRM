@@ -1,11 +1,18 @@
 import { notFound, redirect } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { DueBadge, formatWhen } from "@/components/Time";
-import { changeStageAction } from "@/app/actions";
+import {
+  changeStageAction,
+  createAppointmentAction,
+  updateAppointmentStatusAction,
+} from "@/app/actions";
 import { displayName } from "@/lib/phone";
 import { getSessionUser } from "@/server/auth";
+import { appointmentStatusLabel } from "@/server/appointments";
 import { prisma } from "@/server/db";
 import { StageForm } from "./StageForm";
+import { CreateAppointmentForm } from "./CreateAppointmentForm";
+import { AppointmentStatusForm } from "./AppointmentStatusForm";
 
 export default async function PatientPage({
   params,
@@ -41,10 +48,10 @@ export default async function PatientPage({
   });
   if (!patient) notFound();
 
-  const lossReasons = await prisma.lossReason.findMany({
-    where: { active: true },
-    orderBy: { sortOrder: "asc" },
-  });
+  const [lossReasons, cancelReasons] = await Promise.all([
+    prisma.lossReason.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } }),
+    prisma.cancelReason.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } }),
+  ]);
 
   const openInquiry = patient.inquiries.find((i) => i.status === "OPEN" || i.status === "DEFERRED");
   let transitions: { id: string; name: string; requiresReason: boolean }[] = [];
@@ -121,21 +128,35 @@ export default async function PatientPage({
                 </p>
               ) : null}
 
-              {inquiry.appointments.length > 0 ? (
-                <div className="mt-4 border-t border-[var(--line)] pt-3">
-                  <div className="text-xs uppercase tracking-wide text-[var(--muted)]">Записи</div>
-                  <ul className="mt-2 space-y-1 text-sm">
+              <div className="mt-4 border-t border-[var(--line)] pt-3">
+                <div className="text-xs uppercase tracking-wide text-[var(--muted)]">Записи</div>
+                {inquiry.appointments.length === 0 ? (
+                  <p className="mt-2 text-sm text-[var(--muted)]">Пока нет записей</p>
+                ) : (
+                  <ul className="mt-2 space-y-3">
                     {inquiry.appointments.map((a) => (
-                      <li key={a.id}>
-                        {a.status}
-                        {a.startsAt ? ` · ${formatWhen(a.startsAt)}` : ""}
-                        {a.doctorName ? ` · ${a.doctorName}` : ""}
-                        {a.cancelReason ? ` · ${a.cancelReason.name}` : ""}
+                      <li key={a.id} className="rounded-lg bg-[var(--bg)]/60 p-3">
+                        <div className="text-sm font-medium">
+                          {appointmentStatusLabel[a.status]}
+                          {a.startsAt ? ` · ${formatWhen(a.startsAt)}` : ""}
+                        </div>
+                        <div className="text-xs text-[var(--muted)]">
+                          {[a.doctorName, a.serviceName, a.cancelReason?.name]
+                            .filter(Boolean)
+                            .join(" · ") || "—"}
+                        </div>
+                        <AppointmentStatusForm
+                          appointmentId={a.id}
+                          patientId={patient.id}
+                          currentStatus={a.status}
+                          cancelReasons={cancelReasons}
+                          action={updateAppointmentStatusAction}
+                        />
                       </li>
                     ))}
                   </ul>
-                </div>
-              ) : null}
+                )}
+              </div>
 
               {inquiry.tasks.length > 0 ? (
                 <div className="mt-4 border-t border-[var(--line)] pt-3">
@@ -157,19 +178,32 @@ export default async function PatientPage({
 
         <aside className="space-y-4">
           {openInquiry ? (
-            <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
-              <h2 className="font-[family-name:var(--font-display)] text-xl">Смена этапа</h2>
-              <p className="mt-1 text-sm text-[var(--muted)]">
-                Только разрешённые переходы. Потеря — с причиной.
-              </p>
-              <StageForm
-                inquiryId={openInquiry.id}
-                patientId={patient.id}
-                transitions={transitions}
-                lossReasons={lossReasons}
-                action={changeStageAction}
-              />
-            </div>
+            <>
+              <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
+                <h2 className="font-[family-name:var(--font-display)] text-xl">Новая запись</h2>
+                <p className="mt-1 text-sm text-[var(--muted)]">
+                  Создаёт задачу на подтверждение и обновляет следующий шаг
+                </p>
+                <CreateAppointmentForm
+                  patientId={patient.id}
+                  inquiryId={openInquiry.id}
+                  action={createAppointmentAction}
+                />
+              </div>
+              <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
+                <h2 className="font-[family-name:var(--font-display)] text-xl">Смена этапа</h2>
+                <p className="mt-1 text-sm text-[var(--muted)]">
+                  Только разрешённые переходы. Потеря — с причиной.
+                </p>
+                <StageForm
+                  inquiryId={openInquiry.id}
+                  patientId={patient.id}
+                  transitions={transitions}
+                  lossReasons={lossReasons}
+                  action={changeStageAction}
+                />
+              </div>
+            </>
           ) : null}
 
           <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">

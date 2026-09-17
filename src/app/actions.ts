@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/server/db";
 import { clearSession, getSessionUser, setSession } from "@/server/auth";
 import { createInquiryWithTask, DomainError, moveInquiryStage } from "@/server/inquiries";
-import { TaskStatus } from "@prisma/client";
+import { createAppointment, updateAppointmentStatus } from "@/server/appointments";
+import { AppointmentStatus, TaskStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 
 export async function loginAction(formData: FormData) {
@@ -57,7 +58,7 @@ export async function createInquiryAction(formData: FormData) {
       },
     });
     revalidatePath("/queue");
-    redirect(`/patients/${inquiry.patientId}`);
+    redirect(`/patients/${inquiry.inquiry.patientId}`);
   } catch (e) {
     if (e instanceof DomainError) return { error: e.message };
     throw e;
@@ -105,4 +106,62 @@ export async function completeTaskAction(formData: FormData) {
   });
   revalidatePath("/tasks");
   revalidatePath("/queue");
+  revalidatePath("/control");
+}
+
+export async function createAppointmentAction(formData: FormData) {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+
+  const patientId = String(formData.get("patientId") || "");
+  const inquiryId = String(formData.get("inquiryId") || "") || undefined;
+  const startsAtRaw = String(formData.get("startsAt") || "");
+  const startsAt = startsAtRaw ? new Date(startsAtRaw) : undefined;
+
+  try {
+    await createAppointment({
+      patientId,
+      inquiryId,
+      startsAt,
+      doctorName: String(formData.get("doctorName") || "") || undefined,
+      serviceName: String(formData.get("serviceName") || "") || undefined,
+      actorId: user.id,
+    });
+    revalidatePath(`/patients/${patientId}`);
+    revalidatePath("/appointments");
+    revalidatePath("/tasks");
+    revalidatePath("/queue");
+  } catch (e) {
+    if (e instanceof DomainError) return { error: e.message };
+    throw e;
+  }
+}
+
+export async function updateAppointmentStatusAction(formData: FormData) {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+
+  const appointmentId = String(formData.get("appointmentId") || "");
+  const patientId = String(formData.get("patientId") || "");
+  const status = String(formData.get("status") || "") as AppointmentStatus;
+  const cancelReasonId = String(formData.get("cancelReasonId") || "") || undefined;
+  const comment = String(formData.get("comment") || "") || undefined;
+
+  try {
+    await updateAppointmentStatus({
+      appointmentId,
+      status,
+      cancelReasonId,
+      comment,
+      actorId: user.id,
+    });
+    revalidatePath(`/patients/${patientId}`);
+    revalidatePath("/appointments");
+    revalidatePath("/tasks");
+    revalidatePath("/queue");
+    revalidatePath("/control");
+  } catch (e) {
+    if (e instanceof DomainError) return { error: e.message };
+    throw e;
+  }
 }

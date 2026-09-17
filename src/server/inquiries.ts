@@ -20,7 +20,8 @@ type CreateInquiryInput = {
   reasonText?: string;
   funnelCode?: string;
   assigneeId: string;
-  createdById: string;
+  createdById?: string | null;
+  externalId?: string;
   utm?: {
     sourceSystem?: string;
     sourceCampaign?: string;
@@ -64,6 +65,15 @@ export async function findOrCreatePatient(input: {
 }
 
 export async function createInquiryWithTask(input: CreateInquiryInput) {
+  if (input.externalId) {
+    const existing = await prisma.inquiry.findUnique({
+      where: { externalId: input.externalId },
+    });
+    if (existing) {
+      return { inquiry: existing, duplicated: true as const };
+    }
+  }
+
   const funnelCode = input.funnelCode ?? "primary";
   const funnel = await prisma.funnel.findFirst({
     where: { code: funnelCode, active: true },
@@ -76,10 +86,10 @@ export async function createInquiryWithTask(input: CreateInquiryInput) {
   const slaMinutes = firstStage.slaMinutes ?? 15;
   const firstContactDueAt = new Date(Date.now() + slaMinutes * 60 * 1000);
 
-  const { patient } = await findOrCreatePatient(input);
+  const { patient, created: patientCreated } = await findOrCreatePatient(input);
 
-  return prisma.$transaction(async (tx) => {
-    const inquiry = await tx.inquiry.create({
+  const inquiry = await prisma.$transaction(async (tx) => {
+    const created = await tx.inquiry.create({
       data: {
         patientId: patient.id,
         funnelId: funnel.id,
@@ -87,12 +97,13 @@ export async function createInquiryWithTask(input: CreateInquiryInput) {
         channelId: input.channelId || null,
         serviceDirectionId: input.serviceDirectionId || null,
         assigneeId: input.assigneeId,
-        createdById: input.createdById,
+        createdById: input.createdById || null,
         reasonText: input.reasonText || null,
         status: InquiryStatus.OPEN,
         firstContactDueAt,
         nextActionAt: firstContactDueAt,
         nextActionText: "Установить первый контакт",
+        externalId: input.externalId || null,
         sourceSystem: input.utm?.sourceSystem,
         sourceCampaign: input.utm?.sourceCampaign,
         sourceAd: input.utm?.sourceAd,
@@ -109,25 +120,32 @@ export async function createInquiryWithTask(input: CreateInquiryInput) {
         title: "Обработать новое обращение",
         description: input.reasonText || undefined,
         dueAt: firstContactDueAt,
-        inquiryId: inquiry.id,
+        inquiryId: created.id,
         assigneeId: input.assigneeId,
-        createdById: input.createdById,
+        createdById: input.createdById || null,
         status: TaskStatus.OPEN,
       },
     });
 
     await tx.auditLog.create({
       data: {
-        actorId: input.createdById,
+        actorId: input.createdById || null,
         entityType: "Inquiry",
-        entityId: inquiry.id,
+        entityId: created.id,
         action: "created",
-        payload: JSON.stringify({ patientId: patient.id, stage: firstStage.code }),
+        payload: JSON.stringify({
+          patientId: patient.id,
+          stage: firstStage.code,
+          patientCreated,
+          externalId: input.externalId,
+        }),
       },
     });
 
-    return inquiry;
+    return created;
   });
+
+  return { inquiry, duplicated: false as const };
 }
 
 export async function moveInquiryStage(opts: {

@@ -200,6 +200,8 @@ model Inquiry {
   utmCampaign       String?
   utmContent        String?
   utmTerm           String?
+  /** External idempotency key from website/forms/ads */
+  externalId        String?       @unique
 
   firstContactDueAt DateTime?
   firstContactAt    DateTime?

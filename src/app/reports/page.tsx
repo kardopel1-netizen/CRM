@@ -9,6 +9,13 @@ export default async function ReportsPage() {
   if (!user) redirect("/login");
 
   const now = new Date();
+  const dayStart = new Date(now);
+  dayStart.setHours(0, 0, 0, 0);
+
+  const website = await prisma.channel.findFirst({ where: { code: "website" } });
+  const form = await prisma.channel.findFirst({ where: { code: "form" } });
+  const siteChannelIds = [website?.id, form?.id].filter(Boolean) as string[];
+
   const [
     newInquiries,
     uniquePatients,
@@ -18,6 +25,8 @@ export default async function ReportsPage() {
     booked,
     lost,
     byChannel,
+    fromSiteToday,
+    withExternalId,
   ] = await Promise.all([
     prisma.inquiry.count(),
     prisma.patient.count(),
@@ -34,6 +43,12 @@ export default async function ReportsPage() {
       by: ["channelId"],
       _count: { _all: true },
     }),
+    siteChannelIds.length
+      ? prisma.inquiry.count({
+          where: { channelId: { in: siteChannelIds }, createdAt: { gte: dayStart } },
+        })
+      : Promise.resolve(0),
+    prisma.inquiry.count({ where: { externalId: { not: null } } }),
   ]);
 
   const channels = await prisma.channel.findMany();
@@ -52,6 +67,8 @@ export default async function ReportsPage() {
         <Card label="Без следующего действия" value={withoutNextAction} danger={withoutNextAction > 0} />
         <Card label="Записей (активные статусы)" value={booked} />
         <Card label="Потерянных" value={lost} />
+        <Card label="С сайта/форм сегодня" value={fromSiteToday} />
+        <Card label="Через вебхук (externalId)" value={withExternalId} />
       </div>
 
       <div className="mt-8 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">

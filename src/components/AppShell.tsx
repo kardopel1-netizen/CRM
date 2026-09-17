@@ -5,6 +5,8 @@ import { roleLabel, type SessionUser } from "@/server/auth";
 const nav = [
   { href: "/queue", label: "Очередь" },
   { href: "/tasks", label: "Задачи" },
+  { href: "/appointments", label: "Записи" },
+  { href: "/control", label: "Контроль" },
   { href: "/patients/new", label: "Новое обращение" },
   { href: "/reports", label: "Отчёты" },
 ];
