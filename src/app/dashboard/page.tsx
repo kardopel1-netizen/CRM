@@ -10,9 +10,11 @@ import {
 export default async function DashboardPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
-  if (!canSeeManagementDashboard(user.role)) redirect("/queue");
 
-  const a = await getManagementAnalytics();
+  const scoped = !canSeeManagementDashboard(user.role);
+  const a = await getManagementAnalytics(
+    scoped ? { assigneeId: user.id } : undefined,
+  );
 
   return (
     <AppShell user={user}>
@@ -21,7 +23,9 @@ export default async function DashboardPage() {
           <p className="text-sm uppercase tracking-[0.16em] text-[var(--accent)]">Управление</p>
           <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl">Дашборд</h1>
           <p className="mt-1 text-[var(--muted)]">
-            Ключевые показатели без погружения в каждую карточку
+            {scoped
+              ? "Ваши показатели по назначенным обращениям и задачам"
+              : "Ключевые показатели без погружения в каждую карточку"}
           </p>
         </div>
         <Link href="/reports" className="text-sm text-[var(--accent)] hover:underline">

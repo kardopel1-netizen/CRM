@@ -11,7 +11,7 @@ function avg(nums: number[]) {
   return Math.round(nums.reduce((a, b) => a + b, 0) / nums.length);
 }
 
-export async function getManagementAnalytics() {
+export async function getManagementAnalytics(opts?: { assigneeId?: string }) {
   const now = new Date();
   const dayStart = new Date(now);
   dayStart.setHours(0, 0, 0, 0);
@@ -21,6 +21,12 @@ export async function getManagementAnalytics() {
   const website = await prisma.channel.findFirst({ where: { code: "website" } });
   const form = await prisma.channel.findFirst({ where: { code: "form" } });
   const siteChannelIds = [website?.id, form?.id].filter(Boolean) as string[];
+
+  const assigneeScope = opts?.assigneeId ? { assigneeId: opts.assigneeId } : {};
+  const taskAssigneeScope = opts?.assigneeId ? { assigneeId: opts.assigneeId } : {};
+  const appointmentScope = opts?.assigneeId
+    ? { inquiry: { assigneeId: opts.assigneeId } }
+    : {};
 
   const [
     inquiriesTotal,
@@ -43,15 +49,22 @@ export async function getManagementAnalytics() {
     inquiriesWithAssignee,
     tasksByAssignee,
   ] = await Promise.all([
-    prisma.inquiry.count(),
-    prisma.patient.count(),
-    prisma.inquiry.count({ where: { status: InquiryStatus.OPEN } }),
-    prisma.task.count({ where: { status: TaskStatus.OPEN, dueAt: { lt: now } } }),
+    prisma.inquiry.count({ where: assigneeScope }),
+    opts?.assigneeId
+      ? prisma.patient.count({
+          where: { inquiries: { some: { assigneeId: opts.assigneeId } } },
+        })
+      : prisma.patient.count(),
+    prisma.inquiry.count({ where: { status: InquiryStatus.OPEN, ...assigneeScope } }),
+    prisma.task.count({
+      where: { status: TaskStatus.OPEN, dueAt: { lt: now }, ...taskAssigneeScope },
+    }),
     prisma.inquiry.count({
-      where: { status: InquiryStatus.OPEN, nextActionAt: null },
+      where: { status: InquiryStatus.OPEN, nextActionAt: null, ...assigneeScope },
     }),
     prisma.appointment.count({
       where: {
+        ...appointmentScope,
         status: {
           in: [
             AppointmentStatus.BOOKED,
@@ -61,32 +74,49 @@ export async function getManagementAnalytics() {
         },
       },
     }),
-    prisma.appointment.count({ where: { status: AppointmentStatus.ARRIVED } }),
-    prisma.appointment.count({ where: { status: AppointmentStatus.NO_SHOW } }),
+    prisma.appointment.count({
+      where: { status: AppointmentStatus.ARRIVED, ...appointmentScope },
+    }),
+    prisma.appointment.count({
+      where: { status: AppointmentStatus.NO_SHOW, ...appointmentScope },
+    }),
     prisma.appointment.count({
       where: {
+        ...appointmentScope,
         status: {
           in: [AppointmentStatus.CANCELLED_BY_PATIENT, AppointmentStatus.RESCHEDULED_BY_CLINIC],
         },
       },
     }),
-    prisma.inquiry.count({ where: { status: InquiryStatus.LOST } }),
-    prisma.inquiry.count({ where: { createdAt: { gte: dayStart } } }),
-    prisma.inquiry.count({ where: { createdAt: { gte: weekStart } } }),
+    prisma.inquiry.count({ where: { status: InquiryStatus.LOST, ...assigneeScope } }),
+    prisma.inquiry.count({ where: { createdAt: { gte: dayStart }, ...assigneeScope } }),
+    prisma.inquiry.count({ where: { createdAt: { gte: weekStart }, ...assigneeScope } }),
     siteChannelIds.length
       ? prisma.inquiry.count({
-          where: { channelId: { in: siteChannelIds }, createdAt: { gte: dayStart } },
+          where: {
+            channelId: { in: siteChannelIds },
+            createdAt: { gte: dayStart },
+            ...assigneeScope,
+          },
         })
       : Promise.resolve(0),
-    prisma.inquiry.count({ where: { externalId: { not: null } } }),
-    prisma.inquiry.groupBy({ by: ["channelId"], _count: { _all: true } }),
+    prisma.inquiry.count({ where: { externalId: { not: null }, ...assigneeScope } }),
+    prisma.inquiry.groupBy({
+      by: ["channelId"],
+      where: assigneeScope,
+      _count: { _all: true },
+    }),
     prisma.inquiry.groupBy({
       by: ["lossReasonId"],
-      where: { status: InquiryStatus.LOST, lossReasonId: { not: null } },
+      where: { status: InquiryStatus.LOST, lossReasonId: { not: null }, ...assigneeScope },
       _count: { _all: true },
     }),
     prisma.inquiry.findMany({
-      where: { firstContactAt: { not: null }, firstContactDueAt: { not: null } },
+      where: {
+        firstContactAt: { not: null },
+        firstContactDueAt: { not: null },
+        ...assigneeScope,
+      },
       select: {
         createdAt: true,
         firstContactAt: true,
@@ -96,12 +126,12 @@ export async function getManagementAnalytics() {
     }),
     prisma.inquiry.groupBy({
       by: ["assigneeId"],
-      where: { assigneeId: { not: null } },
+      where: { assigneeId: { not: null }, ...assigneeScope },
       _count: { _all: true },
     }),
     prisma.task.groupBy({
       by: ["assigneeId"],
-      where: { status: TaskStatus.OPEN, dueAt: { lt: now } },
+      where: { status: TaskStatus.OPEN, dueAt: { lt: now }, ...taskAssigneeScope },
       _count: { _all: true },
     }),
   ]);
@@ -125,17 +155,22 @@ export async function getManagementAnalytics() {
   ).length;
 
   const openWithoutFirstContact = await prisma.inquiry.count({
-    where: { status: InquiryStatus.OPEN, firstContactAt: null },
+    where: { status: InquiryStatus.OPEN, firstContactAt: null, ...assigneeScope },
   });
 
   const inquiriesWithAppt = await prisma.inquiry.count({
-    where: { appointments: { some: {} } },
+    where: { appointments: { some: {} }, ...assigneeScope },
   });
 
-  const wonInquiries = await prisma.inquiry.count({ where: { status: InquiryStatus.WON } });
+  const wonInquiries = await prisma.inquiry.count({
+    where: { status: InquiryStatus.WON, ...assigneeScope },
+  });
 
   const byEmployee = users
-    .filter((u) => u.role === Role.OPERATOR || u.role === Role.MANAGER)
+    .filter((u) => {
+      if (opts?.assigneeId) return u.id === opts.assigneeId;
+      return u.role === Role.OPERATOR || u.role === Role.MANAGER;
+    })
     .map((u) => {
       const assigned = inquiriesWithAssignee.find((r) => r.assigneeId === u.id)?._count._all ?? 0;
       const overdue = tasksByAssignee.find((r) => r.assigneeId === u.id)?._count._all ?? 0;
@@ -144,6 +179,7 @@ export async function getManagementAnalytics() {
     .sort((a, b) => b.assigned - a.assigned);
 
   return {
+    scoped: Boolean(opts?.assigneeId),
     totals: {
       inquiriesTotal,
       patientsTotal,
