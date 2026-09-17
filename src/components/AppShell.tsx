@@ -3,6 +3,7 @@ import { logoutAction } from "@/app/actions";
 import { roleLabel, type SessionUser } from "@/server/auth";
 
 const nav = [
+  { href: "/dashboard", label: "Дашборд" },
   { href: "/queue", label: "Очередь" },
   { href: "/patients", label: "Пациенты" },
   { href: "/tasks", label: "Задачи" },

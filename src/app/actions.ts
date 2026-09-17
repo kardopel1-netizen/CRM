@@ -7,6 +7,7 @@ import { clearSession, getSessionUser, setSession } from "@/server/auth";
 import { createInquiryWithTask, DomainError, moveInquiryStage } from "@/server/inquiries";
 import { createAppointment, updateAppointmentStatus } from "@/server/appointments";
 import { logPatientInteraction } from "@/server/interactions";
+import { canSeeManagementDashboard } from "@/server/analytics";
 import { AppointmentStatus, InteractionType, TaskStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 
@@ -28,7 +29,7 @@ export async function loginAction(formData: FormData) {
     role: user.role,
     departmentId: user.departmentId,
   });
-  redirect("/queue");
+  redirect(canSeeManagementDashboard(user.role) ? "/dashboard" : "/queue");
 }
 
 export async function logoutAction() {

@@ -35,12 +35,14 @@ npm run dev
 - Экран «Контроль»: просрочки и эскалация задач
 - Вебхук лидов `POST /api/leads` (UTM, идемпотентность)
 - Уведомления пациентам по событиям записи (stub-провайдер)
+- Дашборд руководства и расширенные отчёты (конверсии, SLA, потери)
 - Классификатор причин потери
 - Очередь, карточка пациента, задачи, базовые отчёты
-- Документы: `docs/process.md`, `docs/classifiers.md`, `docs/webhook.md`, `docs/notifications.md`
+- Документы: `docs/process.md`, `docs/classifiers.md`, `docs/webhook.md`, `docs/notifications.md`, `docs/interactions.md`
 
 ## Дальше
 
-Реальный SMS/WhatsApp-провайдер, интеграции телефонии/МИС, поиск и журнал контактов уже в MVP.
+Реальный SMS/WhatsApp-провайдер, интеграции телефонии/МИС.
 
 Журнал контактов и aftercare после визита: [docs/interactions.md](docs/interactions.md).
+Войти как `owner@clinic.local` / `demo1234` — откроется дашборд.

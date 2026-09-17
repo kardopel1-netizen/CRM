@@ -1,87 +1,107 @@
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { getSessionUser } from "@/server/auth";
-import { prisma } from "@/server/db";
-import { InquiryStatus, TaskStatus } from "@prisma/client";
+import { getManagementAnalytics } from "@/server/analytics";
 
 export default async function ReportsPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  const now = new Date();
-  const dayStart = new Date(now);
-  dayStart.setHours(0, 0, 0, 0);
-
-  const website = await prisma.channel.findFirst({ where: { code: "website" } });
-  const form = await prisma.channel.findFirst({ where: { code: "form" } });
-  const siteChannelIds = [website?.id, form?.id].filter(Boolean) as string[];
-
-  const [
-    newInquiries,
-    uniquePatients,
-    openInquiries,
-    overdueTasks,
-    withoutNextAction,
-    booked,
-    lost,
-    byChannel,
-    fromSiteToday,
-    withExternalId,
-  ] = await Promise.all([
-    prisma.inquiry.count(),
-    prisma.patient.count(),
-    prisma.inquiry.count({ where: { status: InquiryStatus.OPEN } }),
-    prisma.task.count({ where: { status: TaskStatus.OPEN, dueAt: { lt: now } } }),
-    prisma.inquiry.count({
-      where: { status: InquiryStatus.OPEN, nextActionAt: null },
-    }),
-    prisma.appointment.count({
-      where: { status: { in: ["BOOKED", "CONFIRMED", "ARRIVED"] } },
-    }),
-    prisma.inquiry.count({ where: { status: InquiryStatus.LOST } }),
-    prisma.inquiry.groupBy({
-      by: ["channelId"],
-      _count: { _all: true },
-    }),
-    siteChannelIds.length
-      ? prisma.inquiry.count({
-          where: { channelId: { in: siteChannelIds }, createdAt: { gte: dayStart } },
-        })
-      : Promise.resolve(0),
-    prisma.inquiry.count({ where: { externalId: { not: null } } }),
-  ]);
-
-  const channels = await prisma.channel.findMany();
-  const channelMap = Object.fromEntries(channels.map((c) => [c.id, c.name]));
+  const a = await getManagementAnalytics();
 
   return (
     <AppShell user={user}>
       <h1 className="font-[family-name:var(--font-display)] text-3xl">Отчёты</h1>
-      <p className="mt-1 text-[var(--muted)]">Базовые управленческие показатели MVP</p>
+      <p className="mt-1 text-[var(--muted)]">
+        Обращения, конверсии, SLA первого ответа, потери и нагрузка сотрудников
+      </p>
 
       <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Card label="Обращений всего" value={newInquiries} />
-        <Card label="Уникальных пациентов" value={uniquePatients} />
-        <Card label="Открытых обращений" value={openInquiries} />
-        <Card label="Просроченных задач" value={overdueTasks} danger={overdueTasks > 0} />
-        <Card label="Без следующего действия" value={withoutNextAction} danger={withoutNextAction > 0} />
-        <Card label="Записей (активные статусы)" value={booked} />
-        <Card label="Потерянных" value={lost} />
-        <Card label="С сайта/форм сегодня" value={fromSiteToday} />
-        <Card label="Через вебхук (externalId)" value={withExternalId} />
+        <Card label="Обращений всего" value={a.totals.inquiriesTotal} />
+        <Card label="Уникальных пациентов" value={a.totals.patientsTotal} />
+        <Card label="Открытых" value={a.totals.openInquiries} />
+        <Card label="Просроченных задач" value={a.totals.overdueTasks} danger={a.totals.overdueTasks > 0} />
+        <Card
+          label="Без следующего действия"
+          value={a.totals.withoutNextAction}
+          danger={a.totals.withoutNextAction > 0}
+        />
+        <Card label="Записей (активные)" value={a.totals.appointmentsBookedLike} />
+        <Card label="Визиты" value={a.totals.appointmentsArrived} />
+        <Card label="Потерянных" value={a.totals.lostInquiries} />
+        <Card label="С сайта/форм сегодня" value={a.totals.fromSiteToday} />
+        <Card label="Через вебхук" value={a.totals.withExternalId} />
+        <Card label="Конверсия в запись %" value={a.rates.inquiryToAppointment} />
+        <Card label="Запись → визит %" value={a.rates.appointmentToVisit} />
+        <Card
+          label="Ср. первый ответ (мин)"
+          value={a.sla.avgFirstResponseMinutes ?? 0}
+          hint={a.sla.avgFirstResponseMinutes == null ? "нет данных" : undefined}
+        />
+        <Card label="Нарушений SLA ответа" value={a.sla.slaBreaches} danger={a.sla.slaBreaches > 0} />
+        <Card label="Неявки" value={a.totals.appointmentsNoShow} />
+        <Card label="Отмены/переносы" value={a.totals.appointmentsCancelled} />
       </div>
 
-      <div className="mt-8 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
-        <h2 className="font-[family-name:var(--font-display)] text-xl">По каналам</h2>
-        <ul className="mt-4 space-y-2 text-sm">
-          {byChannel.map((row) => (
-            <li key={String(row.channelId)} className="flex justify-between border-b border-[var(--line)]/50 py-2">
-              <span>{row.channelId ? channelMap[row.channelId] ?? "—" : "Без канала"}</span>
-              <span className="font-medium">{row._count._all}</span>
-            </li>
-          ))}
-        </ul>
+      <div className="mt-8 grid gap-6 lg:grid-cols-2">
+        <section className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
+          <h2 className="font-[family-name:var(--font-display)] text-xl">По каналам</h2>
+          <ul className="mt-4 space-y-2 text-sm">
+            {a.byChannel.map((row) => (
+              <li
+                key={row.name}
+                className="flex justify-between border-b border-[var(--line)]/50 py-2"
+              >
+                <span>{row.name}</span>
+                <span className="font-medium">{row.count}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
+          <h2 className="font-[family-name:var(--font-display)] text-xl">Причины потерь</h2>
+          <ul className="mt-4 space-y-2 text-sm">
+            {a.byLossReason.length === 0 ? (
+              <li className="text-[var(--muted)]">Пока нет закрытий с причиной</li>
+            ) : (
+              a.byLossReason.map((row) => (
+                <li
+                  key={row.name}
+                  className="flex justify-between border-b border-[var(--line)]/50 py-2"
+                >
+                  <span>{row.name}</span>
+                  <span className="font-medium">{row.count}</span>
+                </li>
+              ))
+            )}
+          </ul>
+        </section>
       </div>
+
+      <section className="mt-8 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-5">
+        <h2 className="font-[family-name:var(--font-display)] text-xl">По сотрудникам</h2>
+        <table className="mt-4 w-full text-left text-sm">
+          <thead className="text-[var(--muted)]">
+            <tr>
+              <th className="pb-2 font-medium">Сотрудник</th>
+              <th className="pb-2 font-medium">Обращений</th>
+              <th className="pb-2 font-medium">Просроченные задачи</th>
+            </tr>
+          </thead>
+          <tbody>
+            {a.byEmployee.map((row) => (
+              <tr key={row.id} className="border-t border-[var(--line)]/60">
+                <td className="py-2">{row.name}</td>
+                <td className="py-2">{row.assigned}</td>
+                <td className={`py-2 ${row.overdueTasks > 0 ? "text-[var(--danger)]" : ""}`}>
+                  {row.overdueTasks}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
     </AppShell>
   );
 }
@@ -90,10 +110,12 @@ function Card({
   label,
   value,
   danger,
+  hint,
 }: {
   label: string;
   value: number;
   danger?: boolean;
+  hint?: string;
 }) {
   return (
     <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-4">
@@ -103,7 +125,7 @@ function Card({
           danger ? "text-[var(--danger)]" : ""
         }`}
       >
-        {value}
+        {hint ?? value}
       </div>
     </div>
   );
