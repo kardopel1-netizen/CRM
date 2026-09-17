@@ -1,0 +1,297 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OPERATOR
+  MANAGER
+  DIRECTOR
+  OWNER
+  ADMIN
+}
+
+enum InquiryStatus {
+  OPEN
+  WON
+  LOST
+  DEFERRED
+}
+
+enum AppointmentStatus {
+  OFFERED
+  BOOKED
+  CONFIRMED
+  ARRIVED
+  CANCELLED_BY_PATIENT
+  RESCHEDULED_BY_CLINIC
+  NO_SHOW
+  NEEDS_REBOOK
+}
+
+enum TaskStatus {
+  OPEN
+  DONE
+  CANCELLED
+}
+
+enum InteractionType {
+  CALL
+  MESSAGE
+  COMMENT
+  EMAIL
+  OTHER
+}
+
+model Department {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  users     User[]
+}
+
+model User {
+  id           String      @id @default(cuid())
+  email        String      @unique
+  name         String
+  passwordHash String
+  role         Role        @default(OPERATOR)
+  active       Boolean     @default(true)
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  assignedInquiries Inquiry[]      @relation("InquiryAssignee")
+  createdInquiries  Inquiry[]      @relation("InquiryCreator")
+  tasks             Task[]         @relation("TaskAssignee")
+  createdTasks      Task[]         @relation("TaskCreator")
+  interactions      Interaction[]
+  auditLogs         AuditLog[]
+}
+
+model Channel {
+  id        String    @id @default(cuid())
+  code      String    @unique
+  name      String
+  sortOrder Int       @default(0)
+  active    Boolean   @default(true)
+  inquiries Inquiry[]
+}
+
+model ServiceDirection {
+  id        String    @id @default(cuid())
+  code      String    @unique
+  name      String
+  sortOrder Int       @default(0)
+  active    Boolean   @default(true)
+  inquiries Inquiry[]
+}
+
+model LossReason {
+  id        String    @id @default(cuid())
+  code      String    @unique
+  name      String
+  sortOrder Int       @default(0)
+  active    Boolean   @default(true)
+  inquiries Inquiry[]
+}
+
+model CancelReason {
+  id           String        @id @default(cuid())
+  code         String        @unique
+  name         String
+  sortOrder    Int           @default(0)
+  active       Boolean       @default(true)
+  appointments Appointment[]
+}
+
+model Funnel {
+  id          String        @id @default(cuid())
+  code        String        @unique
+  name        String
+  description String?
+  sortOrder   Int           @default(0)
+  active      Boolean       @default(true)
+  stages      FunnelStage[]
+  inquiries   Inquiry[]
+}
+
+model FunnelStage {
+  id              String   @id @default(cuid())
+  funnelId        String
+  funnel          Funnel   @relation(fields: [funnelId], references: [id], onDelete: Cascade)
+  code            String
+  name            String
+  sortOrder       Int      @default(0)
+  isTerminal      Boolean  @default(false)
+  slaMinutes      Int?
+  requiresReason  Boolean  @default(false)
+  active          Boolean  @default(true)
+
+  inquiries Inquiry[]
+  fromTransitions StageTransition[] @relation("FromStage")
+  toTransitions   StageTransition[] @relation("ToStage")
+
+  @@unique([funnelId, code])
+}
+
+model StageTransition {
+  id          String      @id @default(cuid())
+  fromStageId String
+  toStageId   String
+  fromStage   FunnelStage @relation("FromStage", fields: [fromStageId], references: [id], onDelete: Cascade)
+  toStage     FunnelStage @relation("ToStage", fields: [toStageId], references: [id], onDelete: Cascade)
+
+  @@unique([fromStageId, toStageId])
+}
+
+model Patient {
+  id             String   @id @default(cuid())
+  firstName      String
+  lastName       String
+  middleName     String?
+  phone          String
+  phoneNormalized String
+  email          String?
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  inquiries    Inquiry[]
+  appointments Appointment[]
+  interactions Interaction[]
+
+  @@index([phoneNormalized])
+  @@index([lastName, firstName])
+}
+
+model Inquiry {
+  id                String        @id @default(cuid())
+  patientId         String
+  patient           Patient       @relation(fields: [patientId], references: [id])
+  funnelId          String
+  funnel            Funnel        @relation(fields: [funnelId], references: [id])
+  stageId           String
+  stage             FunnelStage   @relation(fields: [stageId], references: [id])
+  channelId         String?
+  channel           Channel?      @relation(fields: [channelId], references: [id])
+  serviceDirectionId String?
+  serviceDirection  ServiceDirection? @relation(fields: [serviceDirectionId], references: [id])
+  assigneeId        String?
+  assignee          User?         @relation("InquiryAssignee", fields: [assigneeId], references: [id])
+  createdById       String?
+  createdBy         User?         @relation("InquiryCreator", fields: [createdById], references: [id])
+
+  status            InquiryStatus @default(OPEN)
+  reasonText        String?
+  lossReasonId      String?
+  lossReason        LossReason?   @relation(fields: [lossReasonId], references: [id])
+
+  sourceSystem      String?
+  sourceCampaign    String?
+  sourceAd          String?
+  utmSource         String?
+  utmMedium         String?
+  utmCampaign       String?
+  utmContent        String?
+  utmTerm           String?
+
+  firstContactDueAt DateTime?
+  firstContactAt    DateTime?
+  nextActionAt      DateTime?
+  nextActionText    String?
+  contactAttempts   Int           @default(0)
+  closedAt          DateTime?
+
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  tasks          Task[]
+  appointments   Appointment[]
+  interactions   Interaction[]
+
+  @@index([status, nextActionAt])
+  @@index([assigneeId, status])
+  @@index([createdAt])
+}
+
+model Interaction {
+  id          String          @id @default(cuid())
+  patientId   String
+  patient     Patient         @relation(fields: [patientId], references: [id])
+  inquiryId   String?
+  inquiry     Inquiry?        @relation(fields: [inquiryId], references: [id])
+  authorId    String?
+  author      User?           @relation(fields: [authorId], references: [id])
+  type        InteractionType @default(COMMENT)
+  body        String
+  recordingUrl String?
+  createdAt   DateTime        @default(now())
+
+  @@index([patientId, createdAt])
+  @@index([inquiryId, createdAt])
+}
+
+model Task {
+  id           String     @id @default(cuid())
+  title        String
+  description  String?
+  status       TaskStatus @default(OPEN)
+  dueAt        DateTime
+  completedAt  DateTime?
+  escalatedAt  DateTime?
+  inquiryId    String?
+  inquiry      Inquiry?   @relation(fields: [inquiryId], references: [id])
+  appointmentId String?
+  appointment  Appointment? @relation(fields: [appointmentId], references: [id])
+  assigneeId   String
+  assignee     User       @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  createdById  String?
+  createdBy    User?      @relation("TaskCreator", fields: [createdById], references: [id])
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([assigneeId, status, dueAt])
+  @@index([status, dueAt])
+}
+
+model Appointment {
+  id             String            @id @default(cuid())
+  patientId      String
+  patient        Patient           @relation(fields: [patientId], references: [id])
+  inquiryId      String?
+  inquiry        Inquiry?          @relation(fields: [inquiryId], references: [id])
+  status         AppointmentStatus @default(BOOKED)
+  startsAt       DateTime?
+  doctorName     String?
+  serviceName    String?
+  cancelReasonId String?
+  cancelReason   CancelReason?     @relation(fields: [cancelReasonId], references: [id])
+  comment        String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  tasks Task[]
+
+  @@index([startsAt])
+  @@index([status])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id])
+  entityType String
+  entityId   String
+  action     String
+  payload    String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
